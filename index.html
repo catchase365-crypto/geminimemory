@@ -66,6 +66,7 @@
         /* --- 核心日历网格样式 --- */
         .sidebar {
             width: var(--sidebar-width);
+            flex-shrink: 0; /* 防止被右侧内容挤压 */
             border-right: 1px solid var(--border-glass);
             display: flex; flex-direction: column;
             background: rgba(0, 0, 0, 0.3);
@@ -95,7 +96,7 @@
         .cal-cell.active .day-num { color: #818cf8; }
 
         /* 右侧主视窗 */
-        .main-content { flex: 1; display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.08); }
+        .main-content { flex: 1; min-width: 0; /* 允许内容安全收缩，触发内部代码块滚动条 */ display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.08); }
         .main-header {
             padding: 20px 40px; border-bottom: 1px solid var(--border-glass);
             font-weight: 600; font-size: 16px; height: 24px; display: flex; align-items: center;
