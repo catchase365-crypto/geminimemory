@@ -186,6 +186,53 @@
         let currentCalDate = new Date();
         let activeSelectedDate = null; // 记录当前点击的日期
 
+        // --- IndexedDB 核心配置 ---
+        const DB_NAME = 'GeminiSandboxDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'chat_data';
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function saveToIndexedDB(data) {
+            try {
+                const db = await initDB();
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.put(data, 'date_groups_cache');
+                return tx.complete;
+            } catch (e) {
+                console.error('保存到 IndexedDB 失败:', e);
+            }
+        }
+
+        async function loadFromIndexedDB() {
+            try {
+                const db = await initDB();
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                return new Promise((resolve) => {
+                    const req = store.get('date_groups_cache');
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => resolve(null);
+                });
+            } catch (e) {
+                console.error('从 IndexedDB 读取失败:', e);
+                return null;
+            }
+        }
+
         function extractDateInfo(cellText) {
             try {
                 const match = cellText.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
@@ -240,6 +287,9 @@
                 }
 
                 if (sortedDates.length > 0) {
+                    // 异步保存超大文件到 IndexedDB
+                    saveToIndexedDB(dateGroups);
+                    
                     // 解析成功后，默认跳转到有数据的最新一个月
                     const latestDateParts = sortedDates[0].split('-');
                     currentCalDate = new Date(latestDateParts[0], parseInt(latestDateParts[1]) - 1, 1);
@@ -321,8 +371,26 @@
             viewContainer.scrollTop = 0;
         }
 
-        // 初始化空日历
-        renderCalendar();
+        // 初始化：优先从 IndexedDB 加载历史大缓存
+        async function bootstrap() {
+            const cachedData = await loadFromIndexedDB();
+            if (cachedData) {
+                dateGroups = cachedData;
+                sortedDates = Object.keys(dateGroups).sort((a, b) => b.replace(/-/g, '') - a.replace(/-/g, ''));
+                if (sortedDates.length > 0) {
+                    const latestDateParts = sortedDates[0].split('-');
+                    currentCalDate = new Date(latestDateParts[0], parseInt(latestDateParts[1]) - 1, 1);
+                    activeSelectedDate = sortedDates[0];
+                    document.getElementById('holderTemplate').style.display = 'none';
+                }
+            }
+            renderCalendar();
+            if (activeSelectedDate) {
+                switchActiveDate(activeSelectedDate);
+            }
+        }
+        
+        bootstrap();
     </script>
 </body>
 </html>
