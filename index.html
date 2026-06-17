@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gemini 跨端自适应时光沙箱 (网格日历版)</title>
+    <style>
+        /* --- 极致自适应液态磨砂玻璃微光主题 --- */
+        :root {
+            --bg-glass: rgba(255, 255, 255, 0.05);
+            --bg-glass-active: rgba(255, 255, 255, 0.16);
+            --border-glass: rgba(255, 255, 255, 0.1);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --sidebar-width: 360px; /* 为了放得下网格日历，侧边栏稍微加宽 */
+        }
+
+        body {
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #060913;
+            color: var(--text-main);
+            height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            overflow: hidden;
+        }
+
+        /* 静态流体背景圆 */
+        .fluid-bg {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            overflow: hidden; z-index: 1; pointer-events: none;
+        }
+        .circle { position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.25; }
+        .c-emerald { width: max(40vw, 40vh); height: max(40vw, 40vh); background: #10b981; top: -10%; left: -10%; }
+        .c-violet { width: max(45vw, 45vh); height: max(45vw, 45vh); background: #8b5cf6; bottom: -15%; right: -10%; }
+        .c-seablue { width: max(35vw, 35vh); height: max(35vw, 35vh); background: #06b6d4; top: 40%; left: -15%; }
+        .c-magenta { width: max(38vw, 38vh); height: max(38vw, 38vh); background: #ec4899; top: -15%; right: 15%; }
+        .c-orange { width: max(42vw, 42vh); height: max(42vw, 42vh); background: #f59e0b; bottom: 10%; left: 35%; }
+
+        /* 主体容器 */
+        .app-container {
+            position: relative; z-index: 2;
+            width: 98vw; height: 96vh;
+            background: var(--bg-glass);
+            backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
+            border: 1px solid var(--border-glass); border-radius: 24px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+            display: flex; overflow: hidden;
+        }
+
+        /* 顶部统一导入栏 */
+        .global-file-picker {
+            position: absolute; top: 15px; right: 20px; z-index: 10;
+        }
+        .file-btn-wrapper { position: relative; overflow: hidden; }
+        .file-btn {
+            background: rgba(255,255,255,0.12); border: 1px solid var(--border-glass); 
+            padding: 6px 14px; border-radius: 10px; color: #fff; font-size: 13px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .file-btn:hover { background: rgba(255,255,255,0.2); }
+        .file-btn-wrapper input[type=file] {
+            position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+        }
+
+        /* --- 核心日历网格样式 --- */
+        .sidebar {
+            width: var(--sidebar-width);
+            border-right: 1px solid var(--border-glass);
+            display: flex; flex-direction: column;
+            background: rgba(0, 0, 0, 0.3);
+        }
+        .calendar-wrapper { padding: 20px; display: flex; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto; }
+        .cal-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        .cal-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); color: var(--text-main); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: 0.2s; }
+        .cal-btn:hover { background: rgba(255,255,255,0.15); }
+        
+        .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 13px; color: var(--text-muted); font-weight: bold; margin-bottom: 5px; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        
+        .cal-cell {
+            background: transparent; border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; 
+            padding: 8px 0; display: flex; flex-direction: column; justify-content: center; align-items: center;
+            min-height: 45px; transition: all 0.2s; box-sizing: border-box;
+        }
+        .cal-cell .day-num { font-size: 14px; font-weight: bold; }
+        .cal-cell .day-count { font-size: 10px; margin-top: 2px; opacity: 0; }
+        
+        .cal-cell.has-data {
+            background: rgba(129, 140, 248, 0.1); border-color: rgba(129, 140, 248, 0.3); cursor: pointer;
+        }
+        .cal-cell.has-data .day-count { opacity: 1; color: #a5b4fc; }
+        .cal-cell.has-data:hover { background: rgba(129, 140, 248, 0.2); }
+        .cal-cell.active { background: var(--bg-glass-active); border-color: #818cf8; box-shadow: inset 0 0 10px rgba(129, 140, 248, 0.2); }
+        .cal-cell.active .day-num { color: #818cf8; }
+
+        /* 右侧主视窗 */
+        .main-content { flex: 1; display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.08); }
+        .main-header {
+            padding: 20px 40px; border-bottom: 1px solid var(--border-glass);
+            font-weight: 600; font-size: 16px; height: 24px; display: flex; align-items: center;
+            background: rgba(0,0,0,0.15);
+        }
+        .chat-view { 
+            flex: 1; padding: 30px 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 30px; 
+
+        }
+        .chat-view::-webkit-scrollbar, .calendar-wrapper::-webkit-scrollbar { width: 6px; }
+        .chat-view::-webkit-scrollbar-thumb, .calendar-wrapper::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+        /* 对话流卡片样式 */
+        .timeline-container { display: flex; flex-direction: column; gap: 20px; width: 100%; }
+        .outer-cell {
+            background: rgba(13, 20, 35, 0.45); border: 1px solid var(--border-glass);
+            border-radius: 16px; padding: 20px 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15); color: var(--text-main);
+            width: 100%; box-sizing: border-box; line-height: 1.7; font-size: 15px;
+        }
+        .outer-cell h1, .outer-cell h2, .outer-cell h3 { color: #a5b4fc; margin-top: 0.8em; }
+        .outer-cell pre { background: rgba(0, 0, 0, 0.5); padding: 14px; border-radius: 10px; overflow-x: auto; font-family: monospace; border: 1px solid rgba(255,255,255,0.06); }
+        .outer-cell code { background: rgba(255, 255, 255, 0.12); padding: 2px 5px; border-radius: 4px; color: #fca5a5; font-family: monospace; font-size: 13.5px; }
+
+        /* 手机端响应式核心 (max-width: 767px) */
+        @media (max-width: 767px) {
+            .app-container { flex-direction: column; width: 100vw; height: 100vh; border-radius: 0; border: none; }
+            .global-file-picker { top: 12px; right: 15px; }
+            
+            /* 手机端日历置顶显示 */
+            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border-glass); flex: 0 0 auto; max-height: 50vh; }
+            .calendar-wrapper { padding: 50px 15px 15px 15px; } /* 留出顶部按钮空间 */
+            
+            /* 手机端主内容区域 */
+            .main-content { flex: 1; height: calc(100vh - 50vh); }
+            .main-header { display: none; }
+            .chat-view { padding: 15px; gap: 15px; }
+            .outer-cell { padding: 16px 18px; border-radius: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="fluid-bg">
+        <div class="circle c-emerald"></div>
+        <div class="circle c-violet"></div>
+        <div class="circle c-seablue"></div>
+        <div class="circle c-magenta"></div>
+        <div class="circle c-orange"></div>
+    </div>
+
+    <div class="global-file-picker">
+        <div class="file-btn-wrapper">
+            <button class="file-btn">📥 导入对话文件</button>
+            <input type="file" id="htmlFileInput" accept=".html">
+        </div>
+    </div>
+
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="calendar-wrapper">
+                <div class="cal-header">
+                    <button class="cal-btn" onclick="changeMonth(-1)">◀ 上月</button>
+                    <div id="calMonthYear" style="cursor: pointer;" onclick="changeMonth(0)">📅 - 年 - 月</div>
+                    <button class="cal-btn" onclick="changeMonth(1)">下月 ▶</button>
+                </div>
+                <div class="cal-weekdays">
+                    <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+                </div>
+                <div id="calGrid" class="cal-grid"></div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="main-header" id="currentChatTitle">等待数据导入...</div>
+            <div class="chat-view" id="chatViewContainer">
+                <div id="holderTemplate" style="text-align: center; color: var(--text-muted); margin-top: 30vh; font-size: 14px; line-height: 1.8;">
+                    🚀 网格点击式日历架构已就绪。<br>请点击右上角导入 HTML 文件，日历将自动点亮对应日期。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let dateGroups = {}; 
+        let sortedDates = []; 
+        let currentCalDate = new Date();
+        let activeSelectedDate = null; // 记录当前点击的日期
+
+        function extractDateInfo(cellText) {
+            try {
+                const match = cellText.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+                if (match) {
+                    const year = parseInt(match[1]);
+                    const month = parseInt(match[2]);
+                    const day = parseInt(match[3]);
+                    const timeMatch = cellText.match(/(\d{1,2}):(\d{1,2}):(\d{1,2})/);
+                    let ms = 0;
+                    if (timeMatch) {
+                        ms = new Date(year, month - 1, day, timeMatch[1], timeMatch[2], timeMatch[3]).getTime();
+                    }
+                    const mStr = month.toString().padStart(2, '0');
+                    const dStr = day.toString().padStart(2, '0');
+                    return { dateStr: `${year}-${mStr}-${dStr}`, exactMs: ms, year, month, day };
+                }
+            } catch(e) {}
+            return null;
+        }
+
+        document.getElementById('htmlFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('holderTemplate').innerText = "⏳ 正在解析数据并绘制日历...";
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+                const rawHtml = event.target.result;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(rawHtml, 'text/html');
+                const cells = doc.querySelectorAll('.outer-cell'); 
+                
+                dateGroups = {};
+
+                cells.forEach((cell) => {
+                    const cellText = cell.innerText || "";
+                    if (cellText.includes("Prompted") || cellText.includes("年")) {
+                        const dateInfo = extractDateInfo(cellText);
+                        if (dateInfo) {
+                            if (!dateGroups[dateInfo.dateStr]) {
+                                dateGroups[dateInfo.dateStr] = [];
+                            }
+                            dateGroups[dateInfo.dateStr].push({ ms: dateInfo.exactMs, html: cell.innerHTML });
+                        }
+                    }
+                });
+
+                sortedDates = Object.keys(dateGroups).sort((a, b) => b.replace(/-/g, '') - a.replace(/-/g, ''));
+                for (let date in dateGroups) {
+                    dateGroups[date].sort((a, b) => a.ms - b.ms);
+                }
+
+                if (sortedDates.length > 0) {
+                    // 解析成功后，默认跳转到有数据的最新一个月
+                    const latestDateParts = sortedDates[0].split('-');
+                    currentCalDate = new Date(latestDateParts[0], parseInt(latestDateParts[1]) - 1, 1);
+                    activeSelectedDate = sortedDates[0];
+                    renderCalendar();
+                    switchActiveDate(activeSelectedDate);
+                } else {
+                    document.getElementById('holderTemplate').innerText = "❌ 未能在文件中提取到有效的对话日期标签。";
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+        });
+
+        function changeMonth(delta) {
+            if (delta === 0) {
+                currentCalDate = new Date();
+            } else {
+                currentCalDate.setMonth(currentCalDate.getMonth() + delta);
+            }
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const year = currentCalDate.getFullYear();
+            const month = currentCalDate.getMonth();
+            document.getElementById('calMonthYear').innerText = `📅 ${year} 年 ${month + 1} 月`;
+            
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const calGrid = document.getElementById('calGrid');
+            calGrid.innerHTML = '';
+            
+            // 填充前方的空白天数
+            for(let i = 0; i < firstDay; i++) {
+                calGrid.innerHTML += `<div></div>`;
+            }
+            
+            for(let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const records = dateGroups[dateStr];
+                const count = records ? records.length : 0;
+                
+                const cell = document.createElement('div');
+                cell.className = `cal-cell ${count > 0 ? 'has-data' : ''} ${dateStr === activeSelectedDate ? 'active' : ''}`;
+                cell.setAttribute('data-date', dateStr);
+                
+                let countHtml = count > 0 ? `<div class="day-count">${count} 组对话</div>` : `<div class="day-count" style="visibility:hidden">-</div>`;
+                cell.innerHTML = `<div class="day-num">${d}</div>${countHtml}`;
+                
+                if (count > 0) {
+                    cell.onclick = () => switchActiveDate(dateStr);
+                }
+                calGrid.appendChild(cell);
+            }
+        }
+
+        function switchActiveDate(targetDate) {
+            activeSelectedDate = targetDate;
+            
+            // 刷新日历高亮状态
+            document.querySelectorAll('.cal-cell.has-data').forEach(el => {
+                el.classList.toggle('active', el.getAttribute('data-date') === targetDate);
+            });
+
+            // 渲染主内容区域
+            document.getElementById('currentChatTitle').innerText = `💬 ${targetDate} 对话流`;
+            const viewContainer = document.getElementById('chatViewContainer');
+            const dayRecords = dateGroups[targetDate];
+            
+            if (!dayRecords) return;
+
+            let htmlPayload = '<div class="timeline-container">';
+            dayRecords.forEach((record) => {
+                htmlPayload += `<div class="outer-cell">${record.html}</div>`;
+            });
+            htmlPayload += '</div>';
+
+            viewContainer.innerHTML = htmlPayload;
+            viewContainer.scrollTop = 0;
+        }
+
+        // 初始化空日历
+        renderCalendar();
+    </script>
+</body>
+</html>
